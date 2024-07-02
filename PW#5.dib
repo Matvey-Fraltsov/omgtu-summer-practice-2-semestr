@@ -56,11 +56,40 @@ class Message
 #!csharp
 
 using System.Collections.Concurrent;
+using System.Threading;
 
 var queue1 = new BlockingCollection<Message>(2); //очередь первого потока
 var queue2 = new BlockingCollection<Message>(2); //очередь второго потока
 
-// Здесь писать решение
+void pingPong(int num)
+{
+    int count = 100;
+    while(count != 0)
+    {
+        Message message = num == 1 ? queue1.Take() : queue2.Take();
+        message.Handle();
+        count--;
+        if (num == 1)
+            {   
+                Message newM = new Message();
+                queue2.Add(newM);
+            }
+        else if (num == 2 & count != 0)
+            {   
+                Message newM = new Message();
+                queue1.Add(newM);
+            }
+
+    }    
+}
+
+queue1.Add(new Message());
+var thread_1 = new Thread(() => pingPong(1));
+var thread_2 = new Thread(() => pingPong(2));
+thread_1.Start();
+thread_2.Start();
+thread_1.Join();
+thread_2.Join();
 
 #!csharp
 
