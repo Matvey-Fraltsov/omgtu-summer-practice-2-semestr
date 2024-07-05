@@ -33,6 +33,7 @@
 #!csharp
 
 using System.Threading;
+using System.Diagnostics;
 //
 // Вычисление определенного интеграла
 //
@@ -47,10 +48,11 @@ class DefiniteIntegral
     //
 
     static Barrier barrier;
-    static double area = 0.0;
+    static double area;
 
     public static double Solve(double a, double b, Func<double, double> function, double step, int threadsnumber)
     {   
+        area = 0.0;
         if (Math.Abs(step) < Math.Pow(10, -7))
         {
             throw new Exception("Step close to machine zero");
@@ -105,6 +107,132 @@ class DefiniteIntegral
         barrier.SignalAndWait();
     }
 }
+
+class TrapezoidalIntegration
+{
+    public static double CalculateIntegral(Func<double, double> func, double intervalStart, double intervalEnd, double dx)
+    {   
+        if (Math.Abs(dx) < Math.Pow(10, -7))
+        {
+            throw new Exception("dx близок к машинному нулю");
+        }
+
+        var x1 = intervalStart;
+        var x2 = intervalStart + dx;
+        double result = 0;
+        int intervals = (int)((intervalEnd - intervalStart)/dx);
+        
+        for(int i = 0; i < intervals; i++)
+        {
+            double area = Math.Abs((func(x1) + func(x2))/ 2 * dx);
+            x1 = dx;
+            x2 = dx;
+            result += area;
+        }
+
+        return result;
+    }
+}
+
+#!csharp
+
+//Выбор оптимального шага
+double[] steps = [1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6];
+Stopwatch taimer = new Stopwatch();
+List<double> averageTimeList = new List<double>();
+List<double> averageResultList = new List<double>();
+var SIN = (double x) => Math.Sin(x);
+
+for(int i = 0; i < steps.Length; i++)
+{   
+    double result = 0.0;
+    double time = 0.0;
+    for(int j = 0; j < 10; j++)
+    {
+    taimer.Restart();
+    result += DefiniteIntegral.Solve(-100, 100, SIN, steps[i], 10);
+    taimer.Stop();
+    time += taimer.ElapsedMilliseconds;
+    }
+    averageResultList.Add(result / 10);
+    averageTimeList.Add(time / 10);
+    Console.WriteLine($"Шаг: {steps[i]}\tВремя: {averageTimeList[i]}\tРезультат: {averageResultList[i]}");
+}
+//Был выбран шаг 1e-4 так как он обеспечивает оптимальную производительность и точность
+
+#!csharp
+
+//Выбор оптимального числа потоков
+#r "nuget:ScottPlot, 5.0.36"
+
+using Microsoft.DotNet.Interactive.Formatting;
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(700, 700)), HtmlFormatter.MimeType);
+
+Stopwatch taimer = new Stopwatch();
+List<double> averageTimeList = new List<double>();
+List<int> threadNum = new List<int>();
+var SIN = (double x) => Math.Sin(x);
+
+
+for(int i = 1; i <= 100; i += 10)
+{   
+    double result = 0.0;
+    double time = 0.0;
+    for(int j = 0; j < 10; j++)
+    {
+    taimer.Restart();
+    result += DefiniteIntegral.Solve(-100, 100, SIN, 1e-4, i);
+    taimer.Stop();
+    time += taimer.ElapsedMilliseconds;
+    }
+    averageTimeList.Add(time / 10);
+    threadNum.Add(i);
+}
+
+ScottPlot.Plot graph = new();
+graph.Add.Scatter(averageTimeList, threadNum);
+graph
+//Анализируя график, оптимальное число потоков - 41
+
+#!csharp
+
+//Сравнение однопоточной и многопоточной версий
+Stopwatch taimer = new Stopwatch();
+var SIN = (double x) => Math.Sin(x);
+var totalTime1 = 0.0;
+var totalTime2 = 0.0;
+
+for(int i = 0; i < 10; i++)
+{   
+    taimer.Restart();
+    TrapezoidalIntegration.CalculateIntegral(SIN, -100, 100, 1e-4);
+    taimer.Stop();
+    totalTime1 += taimer.ElapsedMilliseconds;
+
+    taimer.Restart();
+    DefiniteIntegral.Solve(-100, 100, SIN, 1e-4, 41);
+    taimer.Stop();
+    totalTime2 += taimer.ElapsedMilliseconds;
+}
+
+Console.WriteLine($"Однопоточный вариант:\nВремя = {totalTime1 / 10}\n");
+Console.WriteLine($"Многопоточный вариант:\nВремя = {totalTime2 / 10}");
+
+#!markdown
+
+Summary
+1) Выбранный оптимальный шаг - 1e-4
+2) Выбранное оптимальное число потоков - 41
+3) Сравнение времени выполнения однопоточной и многопоточной реализации
+
+    Однопоточный вариант:
+    Время = 21
+
+    Многопоточный вариант:
+    Время = 10.9
+
+    многопоточный вариант быстрее однопоточного на 52%
 
 #!csharp
 
