@@ -1,0 +1,193 @@
+#!meta
+
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"aliases":[],"languageName":"csharp","name":"csharp"}]}}
+
+#!markdown
+
+# Практическая работа №6. Изучение производительности потоко-безопасных очередей.
+
+**Цель:** Определить лучшую потоко-безопасную коллекцию для выполнения интенсивной обработки входящих сообщений.
+
+**Результаты:** После выполнения работы Вы сможете:
+1. Назвать оптимальную коллекцию для обработки большого количества сообщений.
+2. Изучите примтив синхронизации Условная переманная.
+
+
+**Материалы для самостоятельного изучения**.
+1. [Потоко-безопасные коллекции](https://learn.microsoft.com/en-us/dotnet/standard/collections/thread-safe/)
+2. Условные переменные Глава 5 п.5.1. книги Г. Эндрюс Основы многопоточного, параллельного и распределенного программирования
+3. [Одна из реализаций условных переменных на .Net](https://learn.microsoft.com/ru-ru/dotnet/api/system.threading.manualresetevent?view=net-8.0)
+
+## Задание.
+Исслдеовать производительность BlockingCollection и ConcurrentQueue в сравнении с непотокоабезопасной очередью.
+
+Для каждой потоко-безопасной очереди необходимо реализовать 2 потока: один записывает объект в очередь, а другой - читает объект из очереди.
+Для непотокобезопасной очереди реализовать два цикла - записи миллиона объектов в очередь и чтение миллиона объектов из очереди.
+
+Необходимо определить два промежутка времени:
+- время за которое поток или цикл обработает миллион объектов
+- время, необходимое на запись и чтение миллиона объектов из очреди.
+
+Сделать десять замеров по каждой коллекции. Все замеры показать на графике.
+
+Записать в ноутбуке вывод - какая и потоко-безопасных коллекций эффективнее. И выразить в процентах - скорость самой быстрой поток-безопасной коллекции по сравнению с обычной очредью.
+
+**Указание**.
+1. Необходимо исключить из замеров время, необходимое для запуска и остановки потоков, то есть посчитать чистое время, необходимое для обработки объектов.
+Для этого следует использовать условные события, которые позволят убедиться, что оба потока запустились и готовы читать и писать объекты и только потом запускать таймер.
+2. Для итогового вывода сравнивать усредненные значения.
+
+#!csharp
+
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
+
+#!csharp
+
+double QueueTesting()
+{
+    Queue<object> queue = new Queue<object>();
+    Stopwatch taimer = new Stopwatch();
+
+    taimer.Start();
+    
+    for (int i = 0; i < 1000000; i++)
+        {
+            queue.Enqueue(i);
+        }
+
+    for (int i = 0; i < 1000000; i++)
+        {
+            queue.Dequeue();
+        }
+
+    taimer.Stop();
+    return taimer.ElapsedMilliseconds;
+}
+
+#!csharp
+
+double BlockingCollectionTesting()
+{
+    var blockingCollection = new BlockingCollection<object>();
+    Stopwatch taimerInp = new Stopwatch();
+    Stopwatch taimerOut = new Stopwatch();
+
+    Thread threadInput = new Thread(() =>
+    {
+        taimerInp.Start();
+        for (int i = 0; i < 1000000; i++)
+            {
+                blockingCollection.Add(i);
+            }
+        taimerInp.Stop();
+    });
+
+    Thread threadOutput = new Thread(() =>
+    {
+        taimerOut.Start();
+        for (int i = 0; i < 1000000; i++)
+            {
+                blockingCollection.Take();
+            }
+        taimerOut.Stop();
+    });
+
+    var start = new ManualResetEventSlim(false);
+    threadInput.Start();
+    threadOutput.Start();
+    start.Set();
+    threadInput.Join();
+    threadOutput.Join();
+
+    return taimerInp.ElapsedMilliseconds + taimerOut.ElapsedMilliseconds;
+}
+
+#!csharp
+
+double ConcurrentQueueTesting()
+{
+    var concurrentQueue = new ConcurrentQueue<object>();
+    Stopwatch taimerInp = new Stopwatch();
+    Stopwatch taimerOut = new Stopwatch();
+
+    Thread threadInput = new Thread(() =>
+    {
+        taimerInp.Start();
+        for (int i = 0; i < 1000000; i++)
+            {
+                concurrentQueue.Enqueue(i);
+            }
+        taimerInp.Stop();
+    });
+
+    Thread threadOutput = new Thread(() =>
+    {
+        taimerOut.Start();
+        for (int i = 0; i < 1000000; i++)
+            {   
+                object obj;
+                concurrentQueue.TryDequeue(out obj);
+            }
+        taimerOut.Stop();
+    });
+
+    var start = new ManualResetEventSlim(false);
+    threadInput.Start();
+    threadOutput.Start();
+    start.Set();
+    threadInput.Join();
+    threadOutput.Join();
+
+    return taimerInp.ElapsedMilliseconds + taimerOut.ElapsedMilliseconds;
+}
+
+#!csharp
+
+List<double> queueTime = new List<double>();
+List<double> BlockingCollectionTime = new List<double>();
+List<double> ConcurrentQueueTime = new List<double>();
+
+for (int i = 0; i < 10; i++)
+{
+    queueTime.Add(QueueTesting());
+    BlockingCollectionTime.Add(BlockingCollectionTesting());
+    ConcurrentQueueTime.Add(ConcurrentQueueTesting());
+}
+
+Console.WriteLine($"Среднее время для Queue: {queueTime.Average()}");
+Console.WriteLine($"Среднее время для BlockingCollection: {BlockingCollectionTime.Average()}");
+Console.WriteLine($"Среднее время для ConcurrentQueue: {ConcurrentQueueTime.Average()}");
+
+#!csharp
+
+#r "nuget:ScottPlot, 5.0.36"
+using Microsoft.DotNet.Interactive.Formatting;
+Formatter.Register(typeof(ScottPlot.Plot), (p, w) => 
+    w.Write(((ScottPlot.Plot)p).GetImageHtml(700, 700)), HtmlFormatter.MimeType);
+
+#!csharp
+
+ScottPlot.Plot graph = new();
+graph.Add.Scatter(Enumerable.Range(1, 10).ToArray(), queueTime.ToArray());
+graph
+
+#!csharp
+
+ScottPlot.Plot graph = new();
+graph.Add.Scatter(Enumerable.Range(1, 10).ToArray(), BlockingCollectionTime.ToArray());
+graph
+
+#!csharp
+
+ScottPlot.Plot graph = new();
+graph.Add.Scatter(Enumerable.Range(1, 10).ToArray(), ConcurrentQueueTime.ToArray());
+graph
+
+#!markdown
+
+## Вывод
+Из потоко-безопасных коллекций наиболее эфективной является ConcurrentQueue. Однако, скорость ConcurrentQueue меньше в среднем примерно на 55 процентов в сравнении со скоростью Queue.
